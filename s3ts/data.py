@@ -82,18 +82,20 @@ class MTaskDataset(Dataset):
         olabel = self.olabels[idx]
         dlabel = self.dlabels[idx]
         dlabel_pred = self.dlabels[idx + self.window_size]
-        window = self.frames[:,:,idx - self.window_size:idx]
+
+        ts = self.series[idx - self.window_size:idx]
+        frame = self.frames[:,:,idx - self.window_size:idx]
         
         # TODO not sure if needed anymore
         # adjust for torch-vision indexing
-        window = np.moveaxis(window, 0, -1)
+        frame = np.moveaxis(frame, 0, -1)
 
         if self.transform:
-            window = self.transform(window)
+            frame = self.transform(frame)
         if self.target_transform:
-            label = self.target_transform(label)
+            olabel = self.target_transform(olabel)
 
-        return window, (olabel, dlabel, dlabel_pred)
+        return (ts, frame), (olabel, dlabel, dlabel_pred)
 
 # ========================================================= #
 #                    PYTORCH DATAMODULE                     #

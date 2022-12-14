@@ -94,7 +94,7 @@ class MultitaskModel(LightningModule):
             self.areg_ts_decoder = LinSeq(in_features=encoder_out_feats,
                 hid_features=encoder_out_feats*2,
                 out_features=self.window_size,
-                hid_layers=1)
+                hid_layers=0)
 
         # similarity frame regression
         if self.tasks.areg_img:
@@ -115,7 +115,7 @@ class MultitaskModel(LightningModule):
     # def get_output_shape(self):
     #     return None
 
-    def forward(self, frame, ts):
+    def forward(self, frame):
 
         """ Use for inference only (separate from training_step)"""
 
@@ -153,8 +153,11 @@ class MultitaskModel(LightningModule):
     def _inner_step(self, x, y):
 
         """ Common actions for training, test and eval steps. """
+
+        # x[0] is the time series
+        # x[1] are the sim frames
         
-        results = self(x)
+        results = self(x[1])
         olabel, dlabel, dlabel_pred = y
 
         counter = 0
@@ -186,21 +189,21 @@ class MultitaskModel(LightningModule):
 
         if self.tasks.areg_ts:
             areg_ts_out = results[counter]
-            areg_ts_loss = F.mse_loss(areg_ts_out, x)
+            areg_ts_loss = F.mse_loss(areg_ts_out, x[0].type(torch.float32))
             losses.append(areg_ts_loss)
             weights.append(self.tasks.areg_ts_weight)
             counter += 1
 
         if self.tasks.areg_img:
             areg_img_out = results[counter]
-            areg_img_loss = F.mse_loss(areg_img_out, x)
+            areg_img_loss = F.mse_loss(areg_img_out, x[1].type(torch.float32))
             losses.append(areg_img_loss)
             weights.append(self.tasks.areg_img_weight)
             counter += 1
 
         W = torch.tensor(weights, dtype=torch.float32)
         A = torch.stack(losses)
-        total_loss = W@A/W.sum()
+        total_loss = torch.exp(W@torch.log(A)/W.sum())
 
         return total_loss, main_out
 

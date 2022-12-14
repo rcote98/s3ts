@@ -5,23 +5,23 @@ class TaskParameters:
 
     """ Settings for the auxiliary tasks. """
 
-    main_weight: int = 3
+    main: bool = True               # Main Label Classification
+    main_weight: int = 3            # Main Label Classification Weight
     
-    disc: bool = True               # Discretized clasification
-    discrete_intervals: int = 5     # Discretized intervals
-    disc_weight: int = 1
+    discrete_intervals: int = 5     # Discretization Intervals
 
-    pred: bool = True               # Prediction
-    pred_time: int = None           # Prediction time (if None, then window_size)
-    pred_weight: int = 1
+    disc: bool = True               # Discretized Clasification
+    disc_weight: int = 1            # Discretized Clasification Weight
 
-    auto: bool = True               # Auto prediction
+    pred: bool = True               # Discretized Prediction
+    pred_time: int = None           # Discretized Prediction Time (if None, then window_size is chosen)
+    pred_weight: int = 1            # Discretized Prediction Weight
 
     areg_ts: bool = True            # Time-Series Autoregression
-    areg_ts_weight: int = 1
+    areg_ts_weight: int = 1         # Time-Series Autoregression Weight
 
-    areg_img: bool = True           # Similarity Frame Autoregression
-    areg_img_weight: int = 1
+    areg_img: bool = False          # Similarity Frame Autoregression
+    areg_img_weight: int = 1        # Similarity Frame Autoregression Weight
 
 @dataclass
 class AugProbabilities:

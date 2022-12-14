@@ -34,14 +34,25 @@ seed_everything(RANDOM_STATE)
 
 probs = AugProbabilities()
 tasks = TaskParameters(
-    main_weight=3,
+    # main task
+    main=True,
+    main_weight=1,
+    
+    discrete_intervals=5,
+
     disc=True,
     disc_weight=1,
-    discrete_intervals=5,
+    
     pred=True,
     pred_time=None,
     pred_weight=1,
-    aenc=False)
+    
+    areg_ts=True,
+    areg_ts_weight=1,
+
+    areg_img=False,
+    areg_img_weight=1,
+    )
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 
@@ -91,7 +102,7 @@ lr_monitor = LearningRateMonitor(logging_interval='step')
 model_checkpoint = ModelCheckpoint(dm.exp_path, save_last=True)
 trainer = Trainer(default_root_dir=dm.exp_path,
     callbacks=[lr_monitor, model_checkpoint, early_stop],
-    max_epochs=100, check_val_every_n_epoch=1,
+    max_epochs=200, check_val_every_n_epoch=1,
     deterministic = True)
 end_time = time.perf_counter()
 print(end_time - start_time, "seconds")
