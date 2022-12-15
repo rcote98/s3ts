@@ -32,24 +32,26 @@ LEARNING_RATE = 1E-5
 RANDOM_STATE = 0
 seed_everything(RANDOM_STATE)
 
+# does not do anything as of yet
 probs = AugProbabilities()
+# multitask parameters
 tasks = TaskParameters(
     # main task
     main=True,
     main_weight=1,
-    
+    # discretization intervals
     discrete_intervals=5,
-
+    # discrete classification
     disc=True,
     disc_weight=1,
-    
+    # discrete prediction
     pred=True,
     pred_time=None,
     pred_weight=1,
-    
+    # time series regression
     areg_ts=True,
     areg_ts_weight=1,
-
+    # similarity frame regression
     areg_img=False,
     areg_img_weight=1,
     )

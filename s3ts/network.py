@@ -72,6 +72,12 @@ class MultitaskModel(LightningModule):
                 hid_features=encoder_out_feats*2,
                 out_features=self.n_labels,
                 hid_layers=0), nn.Softmax())
+            with "main" as name:
+                for phase in ["train", "val", "test"]:
+                    self.__setattr__(f"{name}_{phase}_acc", tm.Accuracy())
+                    self.__setattr__(f"{name}_{phase}_f1",  tm.F1Score(num_classes=n_patterns, average="micro"))
+                    self.__setattr__(f"{name}_{phase}_auroc", tm.AUROC(num_classes=n_patterns, average="macro"))
+
 
         # discretized classification
         if self.tasks.disc:
@@ -80,6 +86,11 @@ class MultitaskModel(LightningModule):
                 hid_features=encoder_out_feats*2,
                 out_features=tasks.discrete_intervals,
                 hid_layers=0), nn.Softmax())
+            with "disc" as name:
+                for phase in ["train", "val", "test"]:
+                    self.__setattr__(f"{name}_{phase}_acc", tm.Accuracy())
+                    self.__setattr__(f"{name}_{phase}_f1",  tm.F1Score(num_classes=n_patterns, average="micro"))
+                    self.__setattr__(f"{name}_{phase}_auroc", tm.AUROC(num_classes=n_patterns, average="macro"))
 
         # discretized prediction decoder
         if self.tasks.pred:
@@ -88,6 +99,11 @@ class MultitaskModel(LightningModule):
                 hid_features=encoder_out_feats*2,
                 out_features=tasks.discrete_intervals,
                 hid_layers=0), nn.Softmax())
+            with "pred" as name:
+                for phase in ["train", "val", "test"]:
+                    self.__setattr__(f"{name}_{phase}_acc", tm.Accuracy())
+                    self.__setattr__(f"{name}_{phase}_f1",  tm.F1Score(num_classes=n_patterns, average="micro"))
+                    self.__setattr__(f"{name}_{phase}_auroc", tm.AUROC(num_classes=n_patterns, average="macro"))
 
         # time series regression
         if self.tasks.areg_ts:
@@ -106,11 +122,7 @@ class MultitaskModel(LightningModule):
                 img_width=self.conv_encoder.encoder_img_width,
                 encoder_feats=self.conv_encoder.encoder_feats)                   
 
-        for phase in ["train", "val", "test"]:
-            self.__setattr__(phase + "_acc", tm.Accuracy())
-            self.__setattr__(phase + "_f1",  tm.F1Score(num_classes=n_patterns, average="micro"))
-            self.__setattr__(phase + "_auroc", tm.AUROC(num_classes=n_patterns, average="macro"))
-
+        
     # TODO qué pereza, innecesario
     # def get_output_shape(self):
     #     return None
@@ -150,9 +162,10 @@ class MultitaskModel(LightningModule):
         return result
 
 
-    def _inner_step(self, x, y):
+    def _inner_step(self, x, y, calc_loss: bool = True):
 
         """ Common actions for training, test and eval steps. """
+        #TODO only calculate loss if needed
 
         # x[0] is the time series
         # x[1] are the sim frames
@@ -160,21 +173,23 @@ class MultitaskModel(LightningModule):
         results = self(x[1])
         olabel, dlabel, dlabel_pred = y
 
-        counter = 0
-        losses = []
-        weights = []
+        # placeholders
+        counter, outputs, losses, weights = 0, [], [], []
         
-        main_out = results[0]
-        y_true_main = F.one_hot(olabel, num_classes=self.n_labels).float()
-        main_loss = F.cross_entropy(main_out, y_true_main)
-        losses.append(main_loss)
-        weights.append(self.tasks.main_weight)
-        counter += 1
+        if self.tasks.main:
+            main_out = results[counter]
+            y_true_main = F.one_hot(olabel, num_classes=self.n_labels).float()
+            main_loss = F.cross_entropy(main_out, y_true_main)
+            outputs.append(main_out)
+            losses.append(main_loss)
+            weights.append(self.tasks.main_weight)
+            counter += 1
 
         if self.tasks.disc:
             disc_out = results[counter]
             y_true_disc = F.one_hot(dlabel, num_classes=self.tasks.discrete_intervals).float()
             disc_loss = F.cross_entropy(disc_out, y_true_disc)
+            outputs.append(disc_out)
             losses.append(disc_loss)
             weights.append(self.tasks.disc_weight)
             counter += 1
@@ -183,6 +198,7 @@ class MultitaskModel(LightningModule):
             pred_out = results[counter]
             y_true_pred = F.one_hot(dlabel_pred, num_classes=self.tasks.discrete_intervals).float()
             pred_loss = F.cross_entropy(pred_out, y_true_pred)
+            outputs.append(pred_out)
             losses.append(pred_loss)
             weights.append(self.tasks.pred_weight)
             counter += 1
@@ -190,6 +206,7 @@ class MultitaskModel(LightningModule):
         if self.tasks.areg_ts:
             areg_ts_out = results[counter]
             areg_ts_loss = F.mse_loss(areg_ts_out, x[0].type(torch.float32))
+            outputs.append(areg_ts_out)
             losses.append(areg_ts_loss)
             weights.append(self.tasks.areg_ts_weight)
             counter += 1
@@ -197,15 +214,15 @@ class MultitaskModel(LightningModule):
         if self.tasks.areg_img:
             areg_img_out = results[counter]
             areg_img_loss = F.mse_loss(areg_img_out, x[1].type(torch.float32))
+            outputs.append(areg_img_out)
             losses.append(areg_img_loss)
             weights.append(self.tasks.areg_img_weight)
             counter += 1
 
-        W = torch.tensor(weights, dtype=torch.float32)
-        A = torch.stack(losses)
-        total_loss = torch.exp(W@torch.log(A)/W.sum())
+        weights = torch.tensor(weights, dtype=torch.float32)
+        losses = torch.stack(losses)
 
-        return total_loss, main_out
+        return outputs, losses, weights
 
     def training_step(self, batch, batch_idx):
 
@@ -214,9 +231,15 @@ class MultitaskModel(LightningModule):
         self.main_task_only = False
 
         x, y = batch
-        loss, y_pred = self._inner_step(x, y)
+        outputs, losses, weights = self._inner_step(x, y)
+        loss = torch.exp(weights@torch.log(losses)/weights.sum())
 
         # accumulate and return metrics for logging
+        counter = 0
+        if self.tasks.main:
+            self.main_train_acc(outputs[counter], y[0])
+            self.main_train_f1(outputs[counter], y[0])
+
         acc = self.train_acc(y_pred, y[0])
         f1 = self.train_f1(y_pred, y[0])
 

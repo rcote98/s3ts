@@ -9,7 +9,7 @@ from __future__ import annotations
 
 # package imports
 from s3ts.data_str import AugProbabilities, TaskParameters
-from s3ts.data_aux import download_dataset, build_STS, compute_medoids
+from s3ts.data_aux import build_STS, compute_medoids
 from s3ts.data_esm import compute_OESM_parallel
 
 # external imports
@@ -86,7 +86,7 @@ class MTaskDataset(Dataset):
         ts = self.series[idx - self.window_size:idx]
         frame = self.frames[:,:,idx - self.window_size:idx]
         
-        # TODO not sure if needed anymore
+        # TODO not sure if needed anymore (apparently it is)
         # adjust for torch-vision indexing
         frame = np.moveaxis(frame, 0, -1)
 
