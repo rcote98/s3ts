@@ -19,7 +19,7 @@ import time
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 
-EXPERIMENT = "multitask_GP"
+EXPERIMENT = "multitask_GP_testing"
 DATASET = "GunPoint"
 
 TEST_SIZE = 0.8

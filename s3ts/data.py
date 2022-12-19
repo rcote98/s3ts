@@ -79,9 +79,13 @@ class MTaskDataset(Dataset):
 
         idx = self.indexes[idx]
 
-        olabel = self.olabels[idx]
-        dlabel = self.dlabels[idx]
-        dlabel_pred = self.dlabels[idx + self.window_size]
+        labels = []
+        if self.tasks.main:
+            labels.append(self.olabels[idx])
+        if self.tasks.disc:
+            labels.append(self.dlabels[idx])
+        if self.tasks.pred:
+            labels.append(self.dlabels[idx + self.window_size])
 
         ts = self.series[idx - self.window_size:idx]
         frame = self.frames[:,:,idx - self.window_size:idx]
@@ -95,7 +99,7 @@ class MTaskDataset(Dataset):
         if self.target_transform:
             olabel = self.target_transform(olabel)
 
-        return (ts, frame), (olabel, dlabel, dlabel_pred)
+        return (ts, frame), labels
 
 # ========================================================= #
 #                    PYTORCH DATAMODULE                     #
