@@ -49,7 +49,7 @@ tasks = TaskParameters(
     pred_time=None,
     pred_weight=1,
     # time series regression
-    areg_ts=True,
+    areg_ts=False,
     areg_ts_weight=1,
     # similarity frame regression
     areg_img=False,
@@ -99,13 +99,13 @@ print(end_time - start_time, "seconds")
 
 print("Setup the trainer...")
 start_time = time.perf_counter()
-early_stop = EarlyStopping(monitor="val_auroc", mode="max", patience=5)
+early_stop = EarlyStopping(monitor="main_val_acc", mode="max", patience=5)
 lr_monitor = LearningRateMonitor(logging_interval='step')
 model_checkpoint = ModelCheckpoint(dm.exp_path, save_last=True)
 trainer = Trainer(default_root_dir=dm.exp_path,
+    log_every_n_steps=1, check_val_every_n_epoch=1,
     callbacks=[lr_monitor, model_checkpoint, early_stop],
-    max_epochs=200, check_val_every_n_epoch=1,
-    deterministic = True)
+    max_epochs=200, deterministic = True)
 end_time = time.perf_counter()
 print(end_time - start_time, "seconds")
 

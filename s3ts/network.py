@@ -21,6 +21,7 @@ import numpy as np
 from s3ts.network_aux import ConvEncoder, LinSeq, ConvDecoder
 from s3ts.data_str import TaskParameters
 
+import itertools
 import logging
 
 log = logging.Logger(__name__)
@@ -64,7 +65,6 @@ class MultitaskModel(LightningModule):
         )
 
         encoder_out_feats = self.conv_encoder.get_output_shape()
-
         
         if self.tasks.main: # main classification
             self.main_decoder = nn.Sequential(
@@ -103,18 +103,22 @@ class MultitaskModel(LightningModule):
                 encoder_feats=self.conv_encoder.encoder_feats) 
 
         # configure loggers
-        names = ["main", "disc", "pred"]
+        names = [
+            ("main", n_patterns), 
+            ("disc", self.tasks.discrete_intervals), 
+            ("pred", self.tasks.discrete_intervals)
+            ]
         flags = [self.tasks.main, self.tasks.disc, self.tasks.pred]
-        nclasses = [n_patterns] + [self.tasks.discrete_intervals]*2
-        for name, flag, nclas in zip(names, flags, nclasses):
+        for (name, nclas), flag in itertools.product(names, flags):
             if flag:
                 for phase in ["train", "val", "test"]:
-                        self.__setattr__(f"{name}_{phase}_acc", tm.Accuracy())
-                        self.__setattr__(f"{name}_{phase}_f1",  tm.F1Score(num_classes=nclas, average="micro"))
+                        self.__setattr__(f"{name}_{phase}_acc", tm.Accuracy(num_classes=nclas, task="multiclass"))
+                        self.__setattr__(f"{name}_{phase}_f1",  tm.F1Score(num_classes=nclas, task="multiclass", average="micro",))
                         if phase != "train":
-                            self.__setattr__(f"{name}_{phase}_auroc", tm.AUROC(num_classes=nclas, average="macro"))
+                            self.__setattr__(f"{name}_{phase}_auroc", tm.AUROC(num_classes=nclas, task="multiclass", average="macro"))
 
-        pass
+    # FORWARD
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 
     def forward(self, frame):
 
@@ -207,16 +211,18 @@ class MultitaskModel(LightningModule):
             
             if not flag: # skip if needed
                 continue
+
+            tc = counter
+            acc = self.__getattr__(f"{name}_{stage}_acc")(outputs[tc], y[tc])
+            f1  = self.__getattr__(f"{name}_{stage}_f1")(outputs[tc], y[tc])
             
-            acc = self.__getattr__(f"{name}_{stage}_acc")(outputs[counter], y[counter])
-            f1  = self.__getattr__(f"{name}_{stage}_f1")(outputs[counter], y[counter])
-            self.__getattr__(f"{name}_{stage}_auroc")(outputs[counter], y[0])
-             
             if stage == "train":
                 self.log(f"{name}_{stage}_loss", losses[counter], sync_dist=True)
                 self.log(f"{name}_{stage}_acc", acc, prog_bar=True, sync_dist=True)
                 self.log(f"{name}_{stage}_f1", f1, prog_bar=True, sync_dist=True)
-            
+            else:
+                self.__getattr__(f"{name}_{stage}_auroc")(outputs[tc], y[tc])
+
             counter += 1
 
         return loss.to(torch.float32)
@@ -237,34 +243,38 @@ class MultitaskModel(LightningModule):
     # EPOCH END
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 
-    def _custom_epoch_end(self, step_outputs, stage):
+    def _custom_epoch_end(self, step_outputs: list[torch.Tensor], stage: str):
 
         """ Common actions for validation and test epoch ends. """
 
-        loss = torch.tensor(step_outputs).mean()
-        self.log(f"{stage}_loss", loss, sync_dist=True)
+        if stage != "train":
+            loss = torch.tensor(step_outputs).mean()
+            self.log(f"{stage}_loss", loss, sync_dist=True)
 
         # tasks to generate metrics from
         names = ["main", "disc", "pred"]
 
         # metrics to analyze
-        metrics = ["acc", "f1", "auroc"]
+        metrics = ["acc", "f1"]
         if stage != "train":
             metrics.append("auroc")
 
         # task flags
         flags = [self.tasks.main, self.tasks.disc, self.tasks.pred]
 
-        for name, flag, metric in zip(names, flags, metrics):
-            mstring = f"{name}_{stage}_{metric}"
-            if flag:
-                val = self.__getattr__(mstring).compute()
-                if stage == "train":
-                    self.log("epoch_" + mstring, val, sync_dist=True)
-                else:
-                    self.log(mstring, val, sync_dist=True)
-                self.__getattr__(mstring).reset()
-                print(f"{mstring}: {val:.4f}")
+        print(f"\n\n  ~~ {stage} stats ~~")
+        for name, flag in zip(names, flags):
+            for metric in metrics:
+                mstring = f"{name}_{stage}_{metric}"
+                if flag:
+                    val = self.__getattr__(mstring).compute()
+                    if stage == "train":
+                        self.log("epoch_" + mstring, val, sync_dist=True)
+                    else:
+                        self.log(mstring, val, sync_dist=True)
+                    self.__getattr__(mstring).reset()
+                    print(f"{mstring}: {val:.4f}")
+        print("")
 
     def training_epoch_end(self, training_step_outputs):
         """ Actions to carry out at the end of each training epoch. """
@@ -272,7 +282,7 @@ class MultitaskModel(LightningModule):
 
     def validation_epoch_end(self, validation_step_outputs):
         """ Actions to carry out at the end of each validation epoch. """
-        self._custom_epoch_end(validation_step_outputs, "train")
+        self._custom_epoch_end(validation_step_outputs, "val")
 
     def test_epoch_end(self, test_step_outputs):
         """ Actions to carry out at the end of each test epoch. """
